@@ -13,6 +13,14 @@ submissions, thesis topics, and study metadata.
 
 ## Installation
 
+One-command Linux installer for Claude Code, Codex, and OpenCode:
+
+```bash
+bash <(curl -fsSL https://gist.githubusercontent.com/dmitthedazed/851024ef40ce538074bdb46e09da8565/raw/install-ais-mcp-linux.sh)
+```
+
+Manual install:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
