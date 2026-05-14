@@ -19,6 +19,15 @@ One-command Linux installer for Claude Code, Codex, and OpenCode:
 bash <(curl -fsSL https://gist.githubusercontent.com/dmitthedazed/851024ef40ce538074bdb46e09da8565/raw/install-ais-mcp-linux.sh)
 ```
 
+Or ask your LLM to install it:
+
+```text
+Install AIS MCP on this Linux machine for Claude Code, Codex, and OpenCode.
+Use this installer gist:
+https://gist.github.com/dmitthedazed/851024ef40ce538074bdb46e09da8565
+Ask me for AIS credentials when needed. Do not commit or print my password.
+```
+
 Manual install:
 
 ```bash
