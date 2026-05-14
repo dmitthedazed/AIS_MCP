@@ -322,18 +322,55 @@ def tool_course_syllabus(predmet_id: str) -> dict:
     }
 
 
+def tool_list_periods(fakulta: str = "30") -> dict:
+    """
+    List all completed study periods available for grade statistics at a faculty.
+    Use the returned obdobi IDs with ais_course_grade_stats.
+    fakulta: faculty code — default 30 (FEI). Other codes: SvF=10, SjF=20, FCHPT=40, FAD=50, MTF=60, FIIT=70.
+    Returns: list of {name, obdobi, start, end} sorted newest first.
+    """
+    sess = get_session()
+    url = f"{BASE_URL}/auth/student/hodnoceni.pl?fakulta={fakulta};lang=en"
+    resp = sess.get(url)
+    soup = BeautifulSoup(resp.text, "lxml")
+
+    periods = []
+    for table in soup.find_all("table"):
+        headers = [text_of(th).strip() for th in table.find_all("th")]
+        if "Name of period" not in headers:
+            continue
+        for row in table.find_all("tr"):
+            cells = [text_of(td).strip() for td in row.find_all("td")]
+            if len(cells) < 3 or not cells[0]:
+                continue
+            a = row.find("a", href=re.compile(r"obdobi=\d+"))
+            if not a:
+                continue
+            m = re.search(r"obdobi=(\d+)", a["href"])
+            if not m:
+                continue
+            periods.append({
+                "name": cells[0],
+                "obdobi": m.group(1),
+                "start": cells[1],
+                "end": cells[2],
+            })
+        break
+
+    return {"fakulta": fakulta, "periods": periods}
+
+
 def tool_course_grade_stats(
     predmet_id: str,
     obdobi: str,
     fakulta: str = "30",
 ) -> dict:
     """
-    Return grade distribution statistics for a course in a completed period.
-    predmet_id: numeric course ID (from ais_lectures_sheet or hodnoceni list).
-    obdobi: period ID — must be a completed period (current period returns an error).
+    Return grade distribution for a course in a completed period.
+    predmet_id: numeric course ID — from ais_lectures_sheet courses[].predmet_id.
+    obdobi: period ID — use ais_list_periods to get available IDs. Must be a completed period.
     fakulta: faculty code — default 30 (FEI). Other codes: SvF=10, SjF=20, FCHPT=40, FAD=50, MTF=60, FIIT=70.
-    Returns: list of term rows (regular exam, resit, ...) with counts per grade (A/B/C/D/E/FX)
-             and attendance totals.
+    Returns: terms list with A/B/C/D/E/FX counts per exam sitting, plus attendance totals.
     """
     sess = get_session()
     url = (f"{BASE_URL}/auth/student/hodnoceni.pl"

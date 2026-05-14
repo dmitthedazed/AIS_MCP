@@ -9,7 +9,7 @@ from ais_mcp.tools.portal import tool_list_studies, tool_portal_menu, tool_conta
 from ais_mcp.tools.academics import (
     tool_grades, tool_grades_all, tool_plan_progress, tool_course_eplans,
     tool_study_details, tool_schoolmates, tool_excuse_notes, tool_course_syllabus,
-    tool_course_grade_stats,
+    tool_course_grade_stats, tool_list_periods,
 )
 from ais_mcp.tools.schedule import tool_schedule, tool_academic_calendar, tool_year_schedule
 from ais_mcp.tools.exams import tool_list_exams, tool_register_exam, tool_unregister_exam
@@ -171,6 +171,17 @@ def ais_course_syllabus(predmet_id: str) -> dict:
              assessment criteria, grade distribution, literature, supervisor.
     """
     return tool_course_syllabus(predmet_id)
+
+
+@app.tool(name="ais_list_periods")
+def ais_list_periods(fakulta: str = "30") -> dict:
+    """
+    List all completed study periods available for grade statistics at a faculty.
+    Call this first to get an obdobi ID for ais_course_grade_stats.
+    fakulta: faculty code — default 30 (FEI). Other codes: SvF=10, SjF=20, FCHPT=40, FAD=50, MTF=60, FIIT=70.
+    Returns: list of {name, obdobi, start, end} sorted newest first.
+    """
+    return tool_list_periods(fakulta)
 
 
 @app.tool(name="ais_course_grade_stats")
