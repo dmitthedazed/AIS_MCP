@@ -211,50 +211,66 @@ def tool_schoolmates(
 
     base_url = target["predmet_links"].get(group) or target["predmet_links"].get("all") or next(iter(target["predmet_links"].values()))
 
-    def _fetch_page(page_url: str) -> tuple[list, list]:
-        r = sess.get(page_url)
-        s = BeautifulSoup(r.text, "lxml")
-        found_students = []
-        # Rows: header has "Name of a student attending the same course"
-        # Student rows have lide/clovek.pl?id= link
-        for tr in s.find_all("tr"):
+    def _parse_students(soup: BeautifulSoup) -> list[dict]:
+        # The name td is the one containing a lide/clovek link WITH text;
+        # the study_info td immediately follows it.
+        # Column count differs between page 1 and subsequent pages, so use link-based detection.
+        found = []
+        for tr in soup.find_all("tr"):
             tds = tr.find_all("td")
             if len(tds) < 4:
                 continue
-            # Find name cell — has profile link
             person_id = None
             name_text = None
-            study_info = None
-            for a in tr.find_all("a", href=True):
-                m = re.search(r"lide/clovek\.pl\?id=(\d+)", a["href"])
-                if m:
-                    person_id = m.group(1)
-                    name_text = text_of(a).strip()
+            name_td_idx = None
+            for i, td in enumerate(tds):
+                for a in td.find_all("a", href=True):
+                    m = re.search(r"lide/clovek\.pl\?id=(\d+)", a["href"])
+                    if m:
+                        person_id = m.group(1)
+                        t = text_of(a).strip()
+                        if t:
+                            name_text = t
+                            name_td_idx = i
+                        break
+                if name_text:
                     break
+            if not person_id:
+                continue
+            # Fallback: name may be plain text in td after photo td
+            if not name_text and name_td_idx is not None and name_td_idx + 1 < len(tds):
+                name_text = text_of(tds[name_td_idx + 1]).strip()
             if not name_text:
                 continue
-            # Study info is in the next td after the name link's td
-            for i, td in enumerate(tds):
-                if td.find("a", href=re.compile(r"lide/clovek")):
-                    if i + 1 < len(tds):
-                        study_info = text_of(tds[i + 1]).strip()
-                    break
-            found_students.append({"name": name_text, "person_id": person_id, "study_info": study_info})
-        # Pagination: links with on=N
-        next_pages = []
-        for a in s.find_all("a", href=True):
-            if "on=" in a["href"] and "predmet=" in a["href"]:
-                full = (BASE_URL + a["href"]) if a["href"].startswith("/") else a["href"]
-                next_pages.append(full)
-        return found_students, list(dict.fromkeys(next_pages))
+            study_info = None
+            if name_td_idx is not None and name_td_idx + 1 < len(tds):
+                study_info = text_of(tds[name_td_idx + 1]).strip()
+            found.append({"name": name_text, "person_id": person_id, "study_info": study_info})
+        return found
 
-    students, extra_pages = _fetch_page(base_url)
-    seen_urls = {base_url}
-    for page_url in extra_pages:
-        if page_url not in seen_urls:
-            seen_urls.add(page_url)
-            more, _ = _fetch_page(page_url)
-            students.extend(more)
+    def _extract_page_urls(soup: BeautifulSoup) -> list[str]:
+        # Only spoluzaci.pl pagination links in lang=en, not email/language-switch links
+        seen: set[str] = set()
+        urls: list[str] = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "spoluzaci.pl" not in href or "on=" not in href:
+                continue
+            if "lang=en" not in href and "lang=e" not in href:
+                continue
+            full = (BASE_URL + href) if href.startswith("/") else href
+            if full not in seen:
+                seen.add(full)
+                urls.append(full)
+        return urls
+
+    first_resp = sess.get(base_url)
+    first_soup = BeautifulSoup(first_resp.text, "lxml")
+    students = _parse_students(first_soup)
+
+    for page_url in _extract_page_urls(first_soup):
+        s = BeautifulSoup(sess.get(page_url).text, "lxml")
+        students.extend(_parse_students(s))
 
     # Deduplicate by person_id
     seen_ids: set[str] = set()
@@ -303,6 +319,65 @@ def tool_course_syllabus(predmet_id: str) -> dict:
         "predmet_id": predmet_id,
         "syllabus": info,
         "raw_text": clean_page_text(soup)[:3000],
+    }
+
+
+def tool_course_grade_stats(
+    predmet_id: str,
+    obdobi: str,
+    fakulta: str = "30",
+) -> dict:
+    """
+    Return grade distribution statistics for a course in a completed period.
+    predmet_id: numeric course ID (from ais_lectures_sheet or hodnoceni list).
+    obdobi: period ID — must be a completed period (current period returns an error).
+    fakulta: faculty code — default 30 (FEI). Other codes: SvF=10, SjF=20, FCHPT=40, FAD=50, MTF=60, FIIT=70.
+    Returns: list of term rows (regular exam, resit, ...) with counts per grade (A/B/C/D/E/FX)
+             and attendance totals.
+    """
+    sess = get_session()
+    url = (f"{BASE_URL}/auth/student/hodnoceni.pl"
+           f"?fakulta={fakulta};obdobi={obdobi};predmet={predmet_id};lang=en")
+    resp = sess.get(url)
+    soup = BeautifulSoup(resp.text, "lxml")
+
+    # Error page check
+    error_el = soup.find(class_=lambda c: c and "uis_msg" in c)
+    if error_el:
+        return {"error": text_of(error_el).strip(), "predmet_id": predmet_id, "obdobi": obdobi}
+
+    terms = []
+    for table in soup.find_all("table"):
+        headers = [text_of(th).strip() for th in table.find_all("th")]
+        if "Term" not in headers or "FX" not in headers:
+            continue
+        for row in table.find_all("tr"):
+            cells = [text_of(td).strip() for td in row.find_all("td")]
+            if not cells or not cells[1]:  # skip empty Term cell
+                continue
+            entry = dict(zip(headers, cells))
+            entry.pop("Ord.", None)
+            # Parse attendance from the "All exam sittings" text block in table 2
+            terms.append(entry)
+        break  # only the first matching table has clean numeric data
+
+    # Extract attendance totals from the text description blocks (second table)
+    attendance = {}
+    for td in soup.find_all("td"):
+        t = text_of(td)
+        m = re.search(r"(Regular exam sitting|first resit|second resit)\s*\(attendance:\s*(\d+)\)", t)
+        if m:
+            attendance[m.group(1)] = int(m.group(2))
+        m2 = re.search(r"All exam sittings\s*\(attendance:\s*(\d+)\)", t)
+        if m2:
+            attendance["all"] = int(m2.group(1))
+
+    return {
+        "predmet_id": predmet_id,
+        "obdobi": obdobi,
+        "fakulta": fakulta,
+        "terms": terms,
+        "attendance": attendance,
     }
 
 

@@ -9,6 +9,7 @@ from ais_mcp.tools.portal import tool_list_studies, tool_portal_menu, tool_conta
 from ais_mcp.tools.academics import (
     tool_grades, tool_grades_all, tool_plan_progress, tool_course_eplans,
     tool_study_details, tool_schoolmates, tool_excuse_notes, tool_course_syllabus,
+    tool_course_grade_stats,
 )
 from ais_mcp.tools.schedule import tool_schedule, tool_academic_calendar, tool_year_schedule
 from ais_mcp.tools.exams import tool_list_exams, tool_register_exam, tool_unregister_exam
@@ -170,6 +171,23 @@ def ais_course_syllabus(predmet_id: str) -> dict:
              assessment criteria, grade distribution, literature, supervisor.
     """
     return tool_course_syllabus(predmet_id)
+
+
+@app.tool(name="ais_course_grade_stats")
+def ais_course_grade_stats(
+    predmet_id: str,
+    obdobi: str,
+    fakulta: str = "30",
+) -> dict:
+    """
+    Return grade distribution for a course in a completed period.
+    predmet_id: numeric course ID — from ais_lectures_sheet courses[].predmet_id.
+    obdobi: period ID — must be a completed period (current period is not available).
+            Known periods: 705=WS 2025/2026, 693=SS 2024/2025, 692=WS 2024/2025.
+    fakulta: faculty code — default 30 (FEI). Other codes: SvF=10, SjF=20, FCHPT=40, FAD=50, MTF=60, FIIT=70.
+    Returns: terms list with A/B/C/D/E/FX counts per exam sitting, plus attendance totals.
+    """
+    return tool_course_grade_stats(predmet_id, obdobi, fakulta)
 
 
 @app.tool(name="ais_excuse_notes")
